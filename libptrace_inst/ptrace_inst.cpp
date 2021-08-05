@@ -13,8 +13,8 @@ process_handle* pi_start_process(const char* pathname, char* const argv[], char*
 int pi_run_basic_block(process_handle* h) { return h->process->run_basic_block(); }
 int pi_run_until(process_handle* h, addr_t addr) { return h->process->run_until(addr); }
 
-int pi_hook_add(process_handle* h, addr_t addr, hook_t hook) {
-    return h->process->hook_add(addr, hook);
+int pi_hook_add(process_handle* h, addr_t addr, hook_t hook, void* user_data) {
+    return h->process->hook_add(addr, hook, user_data);
 }
 int pi_hook_remove(process_handle* h, addr_t addr) { return h->process->hook_remove(addr); }
 

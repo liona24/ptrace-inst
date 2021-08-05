@@ -34,20 +34,33 @@ public:
     int run_basic_block();
     int run_until(addr_t);
 
-    int hook_add(addr_t, hook_t);
+    int hook_add(addr_t, hook_t, void* user_data);
     int hook_remove(addr_t);
 
 private:
     struct Breakpoint {
-        bool enabled;
-        uint64_t original_instruction;
-        addr_t addr;
+        bool enabled { false };
+        bool is_set { false };
+        uint64_t original_instruction { 0 };
+        addr_t addr { 0 };
 
-        hook_t hook;
-        void* user_data;
+        hook_t hook { nullptr };
+        void* user_data { nullptr };
+
+        Breakpoint() = default;
+        Breakpoint& operator=(const Breakpoint&) = default;
+
+        inline constexpr bool operator<(const Breakpoint& rhs) const { return addr < rhs.addr; }
     };
 
+    [[nodiscard]] int hit_breakpoint(
+        std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator& hit);
+    [[nodiscard]] bool set_breakpoint(Breakpoint&);
+    [[nodiscard]] std::map<addr_t, Breakpoint>::iterator add_breakpoint(addr_t,
+                                                                        hook_t,
+                                                                        void* user_data);
+
     const pid_t pid_;
-    std::set<Breakpoint> breakpoints_;
+    std::map<addr_t, Breakpoint> breakpoints_;
     std::map<addr_t, addr_t> known_bbs_;
 };
