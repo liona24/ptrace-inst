@@ -17,8 +17,9 @@ EXPORT process_handle* pi_start_process(const char* pathname,
                                         char* const argv[],
                                         char* const envp[]);
 
-EXPORT int pi_run_basic_block(process_handle*);
 EXPORT int pi_run_until(process_handle*, addr_t);
+
+EXPORT int pi_find_next_basic_block(process_handle*, addr_t* next_branch);
 
 EXPORT int pi_hook_add(process_handle*, addr_t, hook_t, void* user_data);
 EXPORT int pi_hook_remove(process_handle*, addr_t);

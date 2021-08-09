@@ -22,8 +22,7 @@ int start_process(const char* pathname, char* const argv[], char* const envp[], 
 
 class InstrumentedProcess {
 public:
-    explicit InstrumentedProcess(process_handle* h)
-        : handle_(h) {}
+    explicit InstrumentedProcess(process_handle* h);
 
     InstrumentedProcess(InstrumentedProcess&&) = delete;
     InstrumentedProcess(const InstrumentedProcess&) = delete;
@@ -32,8 +31,9 @@ public:
 
     int read_memory(addr_t, uint8_t* memory_out, size_t size);
 
-    int run_basic_block();
     int run_until(addr_t);
+
+    int find_next_basic_block(addr_t* next_branch);
 
     int hook_add(addr_t, hook_t, void* user_data);
     int hook_remove(addr_t);
@@ -55,6 +55,7 @@ private:
     };
 
     inline pid_t pid() const { return handle_->pid; }
+    inline addr_t inst_ptr() const { return handle_->rip; }
 
     [[nodiscard]] int hit_breakpoint(
         std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator& hit);
@@ -64,6 +65,8 @@ private:
                                                                         void* user_data);
 
     process_handle* handle_;
+    size_t csh_;
+    bool has_capstone_ { false };
     std::map<addr_t, Breakpoint> breakpoints_;
     std::map<addr_t, addr_t> known_bbs_;
 };

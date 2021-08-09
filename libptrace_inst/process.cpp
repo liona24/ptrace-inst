@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <capstone/capstone.h>
+
 #ifndef NDEBUG
 #define LOG(x, ...)                                                                                \
     do {                                                                                           \
@@ -38,6 +40,8 @@
         }                                                                                          \
     } while (0)
 
+int find_next_branch_instr(csh, const uint8_t** code, size_t* code_size, uint64_t* rip);
+
 int start_process(const char* pathname,
                   char* const argv[],
                   char* const envp[],
@@ -60,8 +64,22 @@ int start_process(const char* pathname,
 
     WAIT(pid, status);
     CHECK(ptrace(PTRACE_SETOPTIONS, pid, NULL, PTRACE_O_EXITKILL));
+    CHECK(ptrace(PTRACE_PEEKUSER, pid, REG_RIP * 4, &(h->rip)));
 
     return 0;
+}
+
+InstrumentedProcess::InstrumentedProcess(process_handle* h)
+    : handle_(h) {
+
+    cs_err err;
+
+    if ((err = cs_open(CS_ARCH_X86, CS_MODE_64, &csh_)) != CS_ERR_OK ||
+        (err = cs_option(csh_, CS_OPT_DETAIL, CS_OPT_ON)) != CS_ERR_OK) {
+        fprintf(stderr, "Failed to initialize capstone: %s\n", cs_strerror(err));
+    } else {
+        has_capstone_ = true;
+    }
 }
 
 bool InstrumentedProcess::set_breakpoint(InstrumentedProcess::Breakpoint& b) {
@@ -175,7 +193,36 @@ int InstrumentedProcess::read_memory(addr_t addr, uint8_t* memory_out, size_t si
     return 0;
 }
 
-int InstrumentedProcess::run_basic_block() { return -1; }
+int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
+    int status;
+    uint8_t code_buf[128] = { 0 };
+    const uint8_t* inst = code_buf;
+    size_t size = sizeof(code_buf);
+    addr_t rip = inst_ptr();
+
+    if (!has_capstone_) {
+        WARN("Initialization of capstone failed. No basic block support available!");
+        return -1;
+    }
+
+    while (true) {
+        status = find_next_branch_instr(csh_, &inst, &size, &rip);
+
+        if (status == -1) {
+            WARN("Did not find a branching instruction!");
+            return -2;
+        } else if (status == 0) {
+            *next_branch = rip;
+            return 0;
+        }
+
+        memcpy(code_buf, inst, size);
+        CHECK(read_memory(rip + sizeof(code_buf), code_buf + size, sizeof(code_buf) - size));
+        rip += sizeof(code_buf) - size;
+        size = sizeof(code_buf);
+        inst = code_buf;
+    }
+}
 
 int InstrumentedProcess::run_until(addr_t addr) {
     bool is_temp = false;
@@ -230,4 +277,33 @@ int InstrumentedProcess::hook_remove(addr_t addr) {
     it->second.enabled = false;
 
     return 0;
+}
+
+int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint64_t* rip) {
+    cs_insn* insn;
+    int status = -1;
+
+    insn = cs_malloc(h);
+
+    while (*code_size > 0) {
+        if (!cs_disasm_iter(h, code, code_size, rip, insn)) {
+            LOG("Disassembler error: %s\n", cs_strerror(cs_errno(h)));
+            goto END;
+        }
+
+        if (cs_insn_group(h, insn, CS_GRP_JUMP) || cs_insn_group(h, insn, CS_GRP_CALL) ||
+            cs_insn_group(h, insn, CS_GRP_RET) || cs_insn_group(h, insn, CS_GRP_INT) ||
+            cs_insn_group(h, insn, CS_GRP_BRANCH_RELATIVE)) {
+
+            status = 0;
+            goto END;
+        }
+
+        // We use this to check if we ever reached a valid instruction
+        status -= 1;
+    }
+
+END:
+    cs_free(insn, 1);
+    return status;
 }
