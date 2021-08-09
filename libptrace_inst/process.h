@@ -10,6 +10,7 @@ class InstrumentedProcess;
 
 struct process_handle {
     const pid_t pid;
+    addr_t rip;
     InstrumentedProcess* process;
 
     process_handle(pid_t pid)
@@ -21,8 +22,8 @@ int start_process(const char* pathname, char* const argv[], char* const envp[], 
 
 class InstrumentedProcess {
 public:
-    explicit InstrumentedProcess(pid_t pid)
-        : pid_(pid) {}
+    explicit InstrumentedProcess(process_handle* h)
+        : handle_(h) {}
 
     InstrumentedProcess(InstrumentedProcess&&) = delete;
     InstrumentedProcess(const InstrumentedProcess&) = delete;
@@ -53,6 +54,8 @@ private:
         inline constexpr bool operator<(const Breakpoint& rhs) const { return addr < rhs.addr; }
     };
 
+    inline pid_t pid() const { return handle_->pid; }
+
     [[nodiscard]] int hit_breakpoint(
         std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator& hit);
     [[nodiscard]] bool set_breakpoint(Breakpoint&);
@@ -60,7 +63,7 @@ private:
                                                                         hook_t,
                                                                         void* user_data);
 
-    const pid_t pid_;
+    process_handle* handle_;
     std::map<addr_t, Breakpoint> breakpoints_;
     std::map<addr_t, addr_t> known_bbs_;
 };

@@ -56,7 +56,7 @@ int start_process(const char* pathname,
     }
 
     h = new process_handle(pid);
-    h->process = new InstrumentedProcess(pid);
+    h->process = new InstrumentedProcess(h);
 
     WAIT(pid, status);
     CHECK(ptrace(PTRACE_SETOPTIONS, pid, NULL, PTRACE_O_EXITKILL));
@@ -68,7 +68,7 @@ bool InstrumentedProcess::set_breakpoint(InstrumentedProcess::Breakpoint& b) {
     constexpr uint64_t INSTR_TRAP = 0xCC;
     const uint64_t interrupt = (b.original_instruction & ~0xFFULL) | INSTR_TRAP;
 
-    if (ptrace(PTRACE_POKETEXT, pid_, (void*)b.addr, interrupt) < 0) {
+    if (ptrace(PTRACE_POKETEXT, pid(), (void*)b.addr, interrupt) < 0) {
         PRINTERR();
         return false;
     } else {
@@ -82,14 +82,16 @@ int InstrumentedProcess::hit_breakpoint(
 
     int status;
 
-    CHECK(ptrace(PTRACE_CONT, pid_, NULL, NULL));
-    WAIT(pid_, status);
+    CHECK(ptrace(PTRACE_CONT, pid(), NULL, NULL));
+    WAIT(pid(), status);
 
     addr_t rip;
-    CHECK(ptrace(PTRACE_PEEKUSER, pid_, REG_RIP * 4, &rip));
+    CHECK(ptrace(PTRACE_PEEKUSER, pid(), REG_RIP * 4, &rip));
     rip -= 1;
 
-    CHECK(ptrace(PTRACE_POKEUSER, pid_, REG_RIP * 4, rip));
+    handle_->rip = rip;
+
+    CHECK(ptrace(PTRACE_POKEUSER, pid(), REG_RIP * 4, rip));
 
     hit = breakpoints_.find(rip);
     if (hit == breakpoints_.end()) {
@@ -97,7 +99,7 @@ int InstrumentedProcess::hit_breakpoint(
         WARN("We lost a breakpoint @ %p. Panic mode.", (void*)rip);
         abort();
     }
-    CHECK(ptrace(PTRACE_POKETEXT, pid_, rip, hit->second.original_instruction));
+    CHECK(ptrace(PTRACE_POKETEXT, pid(), rip, hit->second.original_instruction));
     hit->second.is_set = false;
 
     if (!hit->second.enabled) {
@@ -106,13 +108,13 @@ int InstrumentedProcess::hit_breakpoint(
 
     if (hit->second.hook != nullptr) {
         struct user_regs_struct regs;
-        CHECK(ptrace(PTRACE_GETREGS, pid_, NULL, &regs));
+        CHECK(ptrace(PTRACE_GETREGS, pid(), NULL, &regs));
 
-        hit->second.hook(pid_, rip, &regs, hit->second.user_data);
+        hit->second.hook(handle_, rip, &regs, hit->second.user_data);
     }
 
-    CHECK(ptrace(PTRACE_SINGLESTEP, pid_, NULL, NULL));
-    WAIT(pid_, status);
+    CHECK(ptrace(PTRACE_SINGLESTEP, pid(), NULL, NULL));
+    WAIT(pid(), status);
 
     if (!set_breakpoint(hit->second)) {
         return -1;
@@ -145,7 +147,7 @@ std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator InstrumentedProcess:
         }
     }
 
-    const uint64_t original_instr = ptrace(PTRACE_PEEKDATA, pid_, (void*)addr, NULL);
+    const uint64_t original_instr = ptrace(PTRACE_PEEKDATA, pid(), (void*)addr, NULL);
 
     Breakpoint b;
     b.addr = addr;
@@ -167,7 +169,9 @@ int InstrumentedProcess::read_memory(addr_t, uint8_t* memory_out, size_t size) {
     (void)size;
     return -1;
 }
+
 int InstrumentedProcess::run_basic_block() { return -1; }
+
 int InstrumentedProcess::run_until(addr_t addr) {
     bool is_temp = false;
     auto it = breakpoints_.find(addr);
@@ -200,6 +204,7 @@ int InstrumentedProcess::run_until(addr_t addr) {
 
     return 0;
 }
+
 int InstrumentedProcess::hook_add(addr_t addr, hook_t hook, void* user_data) {
     const auto it = add_breakpoint(addr, hook, user_data);
     if (it == breakpoints_.end()) {
