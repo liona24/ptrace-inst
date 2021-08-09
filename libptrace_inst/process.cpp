@@ -164,10 +164,15 @@ std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator InstrumentedProcess:
     return breakpoints_.emplace(addr, std::move(b)).first;
 }
 
-int InstrumentedProcess::read_memory(addr_t, uint8_t* memory_out, size_t size) {
-    (void)memory_out;
-    (void)size;
-    return -1;
+int InstrumentedProcess::read_memory(addr_t addr, uint8_t* memory_out, size_t size) {
+    long value;
+
+    for (size_t i = 0; i < size / sizeof(long); ++i) {
+        value = ptrace(PTRACE_PEEKDATA, pid(), addr + addr_t(i) * sizeof(long), NULL);
+        ((long*)memory_out)[i] = value;
+    }
+
+    return 0;
 }
 
 int InstrumentedProcess::run_basic_block() { return -1; }
