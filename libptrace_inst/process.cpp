@@ -205,6 +205,13 @@ int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
         return -1;
     }
 
+    auto it = known_bbs_.find(rip);
+    if (it != known_bbs_.end()) {
+        return it->second;
+    } else {
+        CHECK(read_memory(rip, code_buf, sizeof(code_buf)));
+    }
+
     while (true) {
         status = find_next_branch_instr(csh_, &inst, &size, &rip);
 
@@ -212,6 +219,7 @@ int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
             WARN("Did not find a branching instruction!");
             return -2;
         } else if (status == 0) {
+            known_bbs_.emplace(inst_ptr(), rip);
             *next_branch = rip;
             return 0;
         }
@@ -284,10 +292,14 @@ int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint6
     int status = -1;
 
     insn = cs_malloc(h);
+    if (insn == nullptr) {
+        WARN("Capstone error: %s\n", cs_strerror(cs_errno(h)));
+        return status;
+    }
 
     while (*code_size > 0) {
         if (!cs_disasm_iter(h, code, code_size, rip, insn)) {
-            LOG("Disassembler error: %s\n", cs_strerror(cs_errno(h)));
+            WARN("Disassembler error: %s\n", cs_strerror(cs_errno(h)));
             goto END;
         }
 
