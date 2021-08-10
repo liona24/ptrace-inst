@@ -16,7 +16,8 @@ pkg_check_modules (CAPSTONE REQUIRED capstone)
 target_link_libraries(${PROJECT_NAME} ${CAPSTONE_LIBRARIES})
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address,undefined")
+    target_compile_options(ptrace_inst PRIVATE "-fsanitize=address,undefined")
+    target_link_libraries(ptrace_inst "-fsanitize=address,undefined")
 endif()
 
 target_compile_options(ptrace_inst PRIVATE -Wall -Wextra -pedantic -Werror -Wno-gnu-zero-variadic-macro-arguments)
