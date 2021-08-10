@@ -17,7 +17,7 @@
         fprintf(stderr, "DEBUG: %s:%d - " x "\n", __FILE__, __LINE__, ##__VA_ARGS__);              \
     } while (0)
 #else
-#define LOG(x)
+#define LOG(x, ...)
 #endif
 #define WARN(x, ...)                                                                               \
     do {                                                                                           \
@@ -261,6 +261,13 @@ int InstrumentedProcess::run_until(addr_t addr) {
     if (is_temp) {
         breakpoints_.erase(addr);
     }
+
+    return 0;
+}
+
+int InstrumentedProcess::run_continue() {
+    std::map<addr_t, Breakpoint>::iterator hit;
+    CHECK(hit_breakpoint(hit));
 
     return 0;
 }

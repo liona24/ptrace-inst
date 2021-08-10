@@ -32,6 +32,7 @@ public:
     int read_memory(addr_t, uint8_t* memory_out, size_t size);
 
     int run_until(addr_t);
+    int run_continue();
 
     int find_next_basic_block(addr_t* next_branch);
 
