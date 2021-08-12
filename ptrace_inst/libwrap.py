@@ -74,11 +74,12 @@ _find_next_basic_block.argtypes = [
 ]
 _find_next_basic_block.restype = ctypes.c_int
 
+HOOK = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(_ProcessHandle), ctypes.c_uint64, UserRegsStructRef, ctypes.c_void_p)
 _hook_add = LIB.pi_hook_add
 _hook_add.argtypes = [
     ctypes.POINTER(_ProcessHandle),
     ctypes.c_uint64,
-    ctypes.CFUNCTYPE(ctypes.POINTER(_ProcessHandle), ctypes.c_uint64, UserRegsStructRef, ctypes.c_void_p),
+    HOOK,
     ctypes.c_void_p
 ]
 _hook_add.restype = ctypes.c_int
@@ -109,17 +110,17 @@ _close_process.restype = ctypes.c_int
 
 
 class Process():
-    def _init_(self):
+    def __init__(self):
         self._handle = None
         self._hooks = {}
 
     @property
     def rip(self):
-        return self._handle.rip
+        return self._handle.contents.rip
 
     @property
     def pid(self):
-        return self._handle.pid
+        return self._handle.contents.pid
 
     def _check(self, code: int):
         if code != 0:
@@ -127,11 +128,11 @@ class Process():
 
     def _wrap_hook(self, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data_type: Type):
 
-        @ctypes.CFUNCTYPE(ctypes.POINTER(_ProcessHandle), ctypes.c_uint64, UserRegsStructRef, ctypes.c_void_p)
-        def wrapped(_handle, addr, regs, data):
+        @HOOK
+        def wrapper(_handle, addr, regs, data):
             return hook(self, addr, regs, ctypes.cast(data, user_data_type))
 
-        return wrapped
+        return wrapper
 
     def start_process(self, pathname: str, argv: list[str], envp: list[str]):
         c_argv = (ctypes.c_char_p * (len(argv) + 1))()
@@ -157,9 +158,9 @@ class Process():
         self._check(_run_continue(self._handle))
 
     def find_next_basic_block(self) -> int:
-        bb = 0
+        bb = ctypes.c_uint64()
         self._check(_find_next_basic_block(self._handle, ctypes.byref(bb)))
-        return bb
+        return bb.value
 
     def hook_add(self, addr: int, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data: Any):
         self._hooks[addr] = self._wrap_hook(hook, type(user_data))
@@ -171,14 +172,14 @@ class Process():
 
         del self._hooks[addr]
 
-    def read_memory(self, addr: int, size: int) -> bytearray:
+    def read_memory(self, addr: int, size: int) -> bytes:
         if size % ctypes.sizeof(ctypes.c_size_t) != 0:
             raise ValueError(f"Sorry, size needs to be aligned to {ctypes.sizeof(ctypes.c_size_t)} bytes")
 
         buf = ctypes.create_string_buffer(size)
 
-        self._check(_read_memory(self._handle, addr, buf))
-        return buf
+        self._check(_read_memory(self._handle, addr, buf, size))
+        return buf.raw
 
     def close_process(self):
         self._check(_close_process(self._handle))

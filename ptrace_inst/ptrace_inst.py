@@ -11,6 +11,4 @@ if __name__ == '__main__':
     proc = libwrap.Process()
 
     proc.start_process(args.args[0], args.args, [])
-
-    while True:
-        proc.run_continue()
+    proc.run_continue()
