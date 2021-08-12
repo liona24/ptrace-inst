@@ -15,10 +15,5 @@ pkg_check_modules (CAPSTONE REQUIRED capstone)
 # Use CAPSTONE_FOUND, CAPSTONE_LIBRARIES, CAPSTONE_INCLUDE_DIRS vars
 target_link_libraries(${PROJECT_NAME} ${CAPSTONE_LIBRARIES})
 
-if(CMAKE_BUILD_TYPE MATCHES Debug)
-    target_compile_options(ptrace_inst PRIVATE "-fsanitize=address,undefined")
-    target_link_libraries(ptrace_inst "-fsanitize=address,undefined")
-endif()
-
 target_compile_options(ptrace_inst PRIVATE -Wall -Wextra -pedantic -Werror -Wno-gnu-zero-variadic-macro-arguments)
 set_property(TARGET ptrace_inst PROPERTY CXX_STANDARD 17)
