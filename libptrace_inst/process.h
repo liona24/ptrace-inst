@@ -58,8 +58,7 @@ private:
     inline pid_t pid() const { return handle_->pid; }
     inline addr_t inst_ptr() const { return handle_->rip; }
 
-    [[nodiscard]] int hit_breakpoint(
-        std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator& hit);
+    [[nodiscard]] int hit_breakpoint();
     [[nodiscard]] bool set_breakpoint(Breakpoint&);
     [[nodiscard]] std::map<addr_t, Breakpoint>::iterator add_breakpoint(addr_t,
                                                                         hook_t,
@@ -70,4 +69,6 @@ private:
     bool has_capstone_ { false };
     std::map<addr_t, Breakpoint> breakpoints_;
     std::map<addr_t, addr_t> known_bbs_;
+
+    std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator hit_ { breakpoints_.end() };
 };

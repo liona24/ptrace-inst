@@ -64,7 +64,7 @@ int start_process(const char* pathname,
 
     WAIT(pid, status);
     CHECK(ptrace(PTRACE_SETOPTIONS, pid, NULL, PTRACE_O_EXITKILL));
-    CHECK(ptrace(PTRACE_PEEKUSER, pid, REG_RIP * 4, &(h->rip)));
+    h->rip = ptrace(PTRACE_PEEKUSER, pid, REG_RIP * sizeof(size_t), NULL);
 
     return 0;
 }
@@ -83,6 +83,10 @@ InstrumentedProcess::InstrumentedProcess(process_handle* h)
 }
 
 bool InstrumentedProcess::set_breakpoint(InstrumentedProcess::Breakpoint& b) {
+    if (!b.enabled) {
+        return true;
+    }
+
     constexpr uint64_t INSTR_TRAP = 0xCC;
     const uint64_t interrupt = (b.original_instruction & ~0xFFULL) | INSTR_TRAP;
 
@@ -95,50 +99,49 @@ bool InstrumentedProcess::set_breakpoint(InstrumentedProcess::Breakpoint& b) {
     }
 }
 
-int InstrumentedProcess::hit_breakpoint(
-    std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator& hit) {
+int InstrumentedProcess::hit_breakpoint() {
 
     int status;
-
-    CHECK(ptrace(PTRACE_CONT, pid(), NULL, NULL));
-    WAIT(pid(), status);
-
-    addr_t rip;
-    CHECK(ptrace(PTRACE_PEEKUSER, pid(), REG_RIP * 4, &rip));
-    rip -= 1;
-
-    handle_->rip = rip;
-
-    CHECK(ptrace(PTRACE_POKEUSER, pid(), REG_RIP * 4, rip));
-
-    hit = breakpoints_.find(rip);
-    if (hit == breakpoints_.end()) {
-        // this is not recoverable.
-        WARN("We lost a breakpoint @ %p. Panic mode.", (void*)rip);
-        abort();
-    }
-    CHECK(ptrace(PTRACE_POKETEXT, pid(), rip, hit->second.original_instruction));
-    hit->second.is_set = false;
-
-    if (!hit->second.enabled) {
-        return 0;
-    }
-
-    if (hit->second.hook != nullptr) {
-        struct user_regs_struct regs;
-        CHECK(ptrace(PTRACE_GETREGS, pid(), NULL, &regs));
-
-        hit->second.hook(handle_, rip, &regs, hit->second.user_data);
-    }
 
     CHECK(ptrace(PTRACE_SINGLESTEP, pid(), NULL, NULL));
     WAIT(pid(), status);
 
-    if (!set_breakpoint(hit->second)) {
-        return -1;
-    } else {
+    if (hit_ != breakpoints_.end() && !set_breakpoint(hit_->second)) {
+        WARN("Could not restore breakpoint @ %p", (void*)hit_->second.addr);
+        // we could also fail here, though nothing is in an unstable state yet.
+    }
+
+    CHECK(ptrace(PTRACE_CONT, pid(), NULL, NULL));
+    WAIT(pid(), status);
+
+    addr_t rip = ptrace(PTRACE_PEEKUSER, pid(), REG_RIP * sizeof(size_t), NULL);
+    rip -= 1;
+
+    handle_->rip = rip;
+
+    CHECK(ptrace(PTRACE_POKEUSER, pid(), REG_RIP * sizeof(size_t), rip));
+
+    hit_ = breakpoints_.find(rip);
+    if (hit_ == breakpoints_.end()) {
+        // this is not recoverable :(
+        WARN("We lost a breakpoint @ %p. Panic mode.", (void*)rip);
+        abort();
+    }
+    CHECK(ptrace(PTRACE_POKETEXT, pid(), rip, hit_->second.original_instruction));
+    hit_->second.is_set = false;
+
+    if (!hit_->second.enabled) {
         return 0;
     }
+
+    if (hit_->second.hook != nullptr) {
+        struct user_regs_struct regs;
+        CHECK(ptrace(PTRACE_GETREGS, pid(), NULL, &regs));
+
+        hit_->second.hook(handle_, rip, &regs, hit_->second.user_data);
+    }
+
+    return 0;
 }
 
 std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator InstrumentedProcess::add_breakpoint(
@@ -205,6 +208,9 @@ int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
         return -1;
     }
 
+    // TODO: I : Perform a single step so that we follow the branch!! (maybe emulator?)
+    //       II: Update RIP and do what follows
+
     auto it = known_bbs_.find(rip);
     if (it != known_bbs_.end()) {
         return it->second;
@@ -253,10 +259,9 @@ int InstrumentedProcess::run_until(addr_t addr) {
         }
     }
 
-    std::map<addr_t, Breakpoint>::iterator hit;
     do {
-        CHECK(hit_breakpoint(hit));
-    } while (hit->second.addr != addr);
+        CHECK(hit_breakpoint());
+    } while (hit_->second.addr != addr);
 
     if (is_temp) {
         breakpoints_.erase(addr);
@@ -266,8 +271,7 @@ int InstrumentedProcess::run_until(addr_t addr) {
 }
 
 int InstrumentedProcess::run_continue() {
-    std::map<addr_t, Breakpoint>::iterator hit;
-    CHECK(hit_breakpoint(hit));
+    CHECK(hit_breakpoint());
 
     return 0;
 }
@@ -304,7 +308,11 @@ int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint6
         return status;
     }
 
+    uint64_t current_instr;
+
     while (*code_size > 0) {
+        current_instr = *rip;
+
         if (!cs_disasm_iter(h, code, code_size, rip, insn)) {
             WARN("Disassembler error: %s\n", cs_strerror(cs_errno(h)));
             goto END;
@@ -314,6 +322,7 @@ int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint6
             cs_insn_group(h, insn, CS_GRP_RET) || cs_insn_group(h, insn, CS_GRP_INT) ||
             cs_insn_group(h, insn, CS_GRP_BRANCH_RELATIVE)) {
 
+            *rip = current_instr;
             status = 0;
             goto END;
         }
