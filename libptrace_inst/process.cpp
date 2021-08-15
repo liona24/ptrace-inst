@@ -40,7 +40,11 @@
         }                                                                                          \
     } while (0)
 
-int find_next_branch_instr(csh, const uint8_t** code, size_t* code_size, uint64_t* rip);
+int find_next_branch_instr(csh,
+                           const uint8_t** code,
+                           size_t* code_size,
+                           uint64_t* rip,
+                           uint32_t inst_mask);
 
 int start_process(const char* pathname,
                   char* const argv[],
@@ -99,7 +103,10 @@ bool InstrumentedProcess::set_breakpoint(InstrumentedProcess::Breakpoint& b) {
     }
 }
 
-int InstrumentedProcess::hit_breakpoint() {
+int InstrumentedProcess::single_step() {
+    if (hit_plus_one_) {
+        return 0;
+    }
 
     int status;
 
@@ -111,8 +118,20 @@ int InstrumentedProcess::hit_breakpoint() {
         // we could also fail here, though nothing is in an unstable state yet.
     }
 
+    hit_plus_one_ = true;
+    return 0;
+}
+
+int InstrumentedProcess::hit_breakpoint() {
+
+    int status;
+
+    CHECK(single_step());
+
     CHECK(ptrace(PTRACE_CONT, pid(), NULL, NULL));
     WAIT(pid(), status);
+
+    hit_plus_one_ = false;
 
     addr_t rip = ptrace(PTRACE_PEEKUSER, pid(), REG_RIP * sizeof(size_t), NULL);
     rip -= 1;
@@ -196,7 +215,7 @@ int InstrumentedProcess::read_memory(addr_t addr, uint8_t* memory_out, size_t si
     return 0;
 }
 
-int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
+int InstrumentedProcess::find_next_basic_block(addr_t* next_branch, uint32_t inst_mask) {
     int status;
     uint8_t code_buf[128] = { 0 };
     const uint8_t* inst = code_buf;
@@ -208,24 +227,27 @@ int InstrumentedProcess::find_next_basic_block(addr_t* next_branch) {
         return -1;
     }
 
-    // TODO: I : Perform a single step so that we follow the branch!! (maybe emulator?)
-    //       II: Update RIP and do what follows
-
     auto it = known_bbs_.find(rip);
     if (it != known_bbs_.end()) {
         return it->second;
-    } else {
-        CHECK(read_memory(rip, code_buf, sizeof(code_buf)));
     }
 
+    // Perform the "branch"
+    CHECK(single_step());
+    rip = ptrace(PTRACE_PEEKUSER, pid(), REG_RIP * sizeof(size_t), NULL);
+
+    CHECK(read_memory(rip, code_buf, sizeof(code_buf)));
+
     while (true) {
-        status = find_next_branch_instr(csh_, &inst, &size, &rip);
+        status = find_next_branch_instr(csh_, &inst, &size, &rip, inst_mask);
 
         if (status == -1) {
             WARN("Did not find a branching instruction!");
             return -2;
         } else if (status == 0) {
-            known_bbs_.emplace(inst_ptr(), rip);
+            // FIXME: This should only be done when the branch is unconditional
+            //        Alternatively, we could also store more information and use that upon lookup?
+            // known_bbs_.emplace(inst_ptr(), rip);
             *next_branch = rip;
             return 0;
         }
@@ -298,7 +320,11 @@ int InstrumentedProcess::hook_remove(addr_t addr) {
     return 0;
 }
 
-int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint64_t* rip) {
+int find_next_branch_instr(csh h,
+                           const uint8_t** code,
+                           size_t* code_size,
+                           uint64_t* rip,
+                           uint32_t inst_mask) {
     cs_insn* insn;
     int status = -1;
 
@@ -318,9 +344,12 @@ int find_next_branch_instr(csh h, const uint8_t** code, size_t* code_size, uint6
             goto END;
         }
 
-        if (cs_insn_group(h, insn, CS_GRP_JUMP) || cs_insn_group(h, insn, CS_GRP_CALL) ||
-            cs_insn_group(h, insn, CS_GRP_RET) || cs_insn_group(h, insn, CS_GRP_INT) ||
-            cs_insn_group(h, insn, CS_GRP_BRANCH_RELATIVE)) {
+        if (insn->id == X86_INS_INT3 ||
+            ((inst_mask & BI_JUMP) && cs_insn_group(h, insn, CS_GRP_JUMP)) ||
+            ((inst_mask & BI_CALL) && cs_insn_group(h, insn, CS_GRP_CALL)) ||
+            ((inst_mask & BI_RET) && cs_insn_group(h, insn, CS_GRP_RET)) ||
+            ((inst_mask & BI_IRET) && cs_insn_group(h, insn, CS_GRP_IRET)) ||
+            ((inst_mask & BI_JUMP_REL) && cs_insn_group(h, insn, CS_GRP_BRANCH_RELATIVE))) {
 
             *rip = current_instr;
             status = 0;

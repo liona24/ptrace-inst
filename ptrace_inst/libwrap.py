@@ -1,4 +1,5 @@
 import os
+import enum
 import ctypes
 from typing import Callable, Any, Type
 
@@ -45,6 +46,15 @@ class UserRegsStruct(ctypes.Structure):
 
 UserRegsStructRef = ctypes.POINTER(UserRegsStruct)
 
+class BranchInstruction(enum.IntFlag):
+    BI_JUMP = 1 << 0
+    BI_CALL = 1 << 1
+    BI_RET = 1 << 2
+    BI_IRET = 1 << 3
+    BI_JUMP_REL = 1 << 4
+
+    BI_ALL = BI_JUMP | BI_CALL | BI_RET | BI_IRET | BI_JUMP_REL
+
 
 _start_process = LIB.pi_start_process
 _start_process.argtypes = [
@@ -71,6 +81,7 @@ _find_next_basic_block = LIB.pi_find_next_basic_block
 _find_next_basic_block.argtypes = [
     ctypes.POINTER(_ProcessHandle),
     ctypes.POINTER(ctypes.c_uint64),
+    ctypes.c_uint32,
 ]
 _find_next_basic_block.restype = ctypes.c_int
 
@@ -157,9 +168,9 @@ class Process():
     def run_continue(self):
         self._check(_run_continue(self._handle))
 
-    def find_next_basic_block(self) -> int:
+    def find_next_basic_block(self, instruction_mask: BranchInstruction) -> int:
         bb = ctypes.c_uint64()
-        self._check(_find_next_basic_block(self._handle, ctypes.byref(bb)))
+        self._check(_find_next_basic_block(self._handle, ctypes.byref(bb), int(instruction_mask)))
         return bb.value
 
     def hook_add(self, addr: int, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data: Any):

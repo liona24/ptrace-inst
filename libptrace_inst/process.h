@@ -8,6 +8,16 @@
 
 class InstrumentedProcess;
 
+enum BranchInstruction : uint32_t {
+    BI_JUMP = 1 << 0,
+    BI_CALL = 1 << 1,
+    BI_RET = 1 << 2,
+    BI_IRET = 1 << 3,
+    BI_JUMP_REL = 1 << 4,
+
+    BI_ALL = BI_JUMP | BI_CALL | BI_RET | BI_IRET | BI_JUMP_REL
+};
+
 struct process_handle {
     const pid_t pid;
     addr_t rip;
@@ -34,7 +44,7 @@ public:
     int run_until(addr_t);
     int run_continue();
 
-    int find_next_basic_block(addr_t* next_branch);
+    int find_next_basic_block(addr_t* next_branch, uint32_t instruction_mask);
 
     int hook_add(addr_t, hook_t, void* user_data);
     int hook_remove(addr_t);
@@ -58,6 +68,7 @@ private:
     inline pid_t pid() const { return handle_->pid; }
     inline addr_t inst_ptr() const { return handle_->rip; }
 
+    [[nodiscard]] int single_step();
     [[nodiscard]] int hit_breakpoint();
     [[nodiscard]] bool set_breakpoint(Breakpoint&);
     [[nodiscard]] std::map<addr_t, Breakpoint>::iterator add_breakpoint(addr_t,
@@ -70,5 +81,6 @@ private:
     std::map<addr_t, Breakpoint> breakpoints_;
     std::map<addr_t, addr_t> known_bbs_;
 
+    bool hit_plus_one_ { false };
     std::map<addr_t, InstrumentedProcess::Breakpoint>::iterator hit_ { breakpoints_.end() };
 };
