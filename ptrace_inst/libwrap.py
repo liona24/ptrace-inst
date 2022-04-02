@@ -137,11 +137,11 @@ class Process():
         if code != 0:
             raise RuntimeError(f"Return value {code} != 0!")
 
-    def _wrap_hook(self, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data_type: Type):
+    def _wrap_hook(self, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data: Any):
 
         @HOOK
-        def wrapper(_handle, addr, regs, data):
-            return hook(self, addr, regs, ctypes.cast(data, user_data_type))
+        def wrapper(_handle, addr, regs, _data):
+            return hook(self, addr, regs, user_data)
 
         return wrapper
 
@@ -174,9 +174,9 @@ class Process():
         return bb.value
 
     def hook_add(self, addr: int, hook: Callable[["Process", int, UserRegsStructRef, Any], int], user_data: Any):
-        self._hooks[addr] = self._wrap_hook(hook, type(user_data))
+        self._hooks[addr] = self._wrap_hook(hook, user_data)
 
-        self._check(_hook_add(self._handle, addr, self._hooks[addr], ctypes.byref(user_data)))
+        self._check(_hook_add(self._handle, addr, self._hooks[addr], None))
 
     def hook_remove(self, addr: int):
         self._check(_hook_remove(self._handle, addr))
