@@ -59,9 +59,6 @@ private:
         hook_t hook { nullptr };
         void* user_data { nullptr };
 
-        Breakpoint() = default;
-        Breakpoint& operator=(const Breakpoint&) = default;
-
         inline constexpr bool operator<(const Breakpoint& rhs) const { return addr < rhs.addr; }
     };
 

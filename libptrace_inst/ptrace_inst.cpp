@@ -4,7 +4,7 @@ process_handle* pi_start_process(const char* pathname, char* const argv[], char*
     process_handle* h = nullptr;
     if (start_process(pathname, argv, envp, h)) {
         pi_close_process(h);
-        return NULL;
+        return nullptr;
     } else {
         return h;
     }
