@@ -1,5 +1,4 @@
 import os
-import ctypes
 
 import ptrace_inst.libwrap as lib
 
@@ -18,6 +17,12 @@ if __name__ == '__main__':
     args = [exe]
     proc = lib.Process()
 
+    # If you would like to provide some input:
+    # read, write = os.pipe()
+    # proc.start_process(exe, args, [], fd_stdin=read)
+    # os.write(write, b"Hello!")
+    # os.close(write)
+
     proc.start_process(exe, args, [])
     print(f"[+] Started process {exe} with pid {proc.pid} and rip @ {hex(proc.rip)}")
 
@@ -34,7 +39,7 @@ if __name__ == '__main__':
         print(f"[+] Current basic block : {hex(proc.rip)} - {hex(bb)}")
         if bb not in bbs:
             bbs.add(bb)
-            proc.hook_add(bb, simple_status_printing_hook, ctypes.c_void_p())
+            proc.hook_add(bb, simple_status_printing_hook, None)
 
         proc.run_until(bb)
 

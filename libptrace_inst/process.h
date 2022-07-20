@@ -28,7 +28,13 @@ struct process_handle {
         , process(nullptr) {}
 };
 
-int start_process(const char* pathname, char* const argv[], char* const envp[], process_handle*&);
+int start_process(const char* pathname,
+                  char* const argv[],
+                  char* const envp[],
+                  int fs_stdin,
+                  int fd_stdout,
+                  int fd_stderr,
+                  process_handle*&);
 
 class InstrumentedProcess {
 public:

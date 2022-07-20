@@ -16,6 +16,14 @@ extern "C" {
 EXPORT process_handle* pi_start_process(const char* pathname,
                                         char* const argv[],
                                         char* const envp[]);
+// same as pi_start_process, except that the started processes stdio file descriptors are replaced
+// with the provided. You may set anyone to -1 to not override it.
+EXPORT process_handle* pi_start_process2(const char* pathname,
+                                         char* const argv[],
+                                         char* const envp[],
+                                         int fd_stdin,
+                                         int fd_stdout,
+                                         int fd_stderr);
 
 EXPORT int pi_run_until(process_handle*, addr_t);
 EXPORT int pi_run_continue(process_handle*);

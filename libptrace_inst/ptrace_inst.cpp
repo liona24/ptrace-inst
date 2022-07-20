@@ -1,8 +1,17 @@
 #include "ptrace_inst.h"
 
 process_handle* pi_start_process(const char* pathname, char* const argv[], char* const envp[]) {
+    return pi_start_process2(pathname, argv, envp, -1, -1, -1);
+}
+
+process_handle* pi_start_process2(const char* pathname,
+                                  char* const argv[],
+                                  char* const envp[],
+                                  int fd_stdin,
+                                  int fd_stdout,
+                                  int fd_stderr) {
     process_handle* h = nullptr;
-    if (start_process(pathname, argv, envp, h)) {
+    if (start_process(pathname, argv, envp, fd_stdin, fd_stdout, fd_stderr, h)) {
         pi_close_process(h);
         return nullptr;
     } else {

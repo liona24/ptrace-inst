@@ -49,6 +49,9 @@ int find_next_branch_instr(csh,
 int start_process(const char* pathname,
                   char* const argv[],
                   char* const envp[],
+                  int fd_stdin,
+                  int fd_stdout,
+                  int fd_stderr,
                   process_handle*& h) {
     int status;
     pid_t pid;
@@ -58,9 +61,30 @@ int start_process(const char* pathname,
     pid = fork();
 
     if (pid == 0) {
+        if (fd_stdin >= 0) {
+            CHECK(dup2(fd_stdin, STDIN_FILENO));
+        }
+        if (fd_stdout >= 0) {
+            CHECK(dup2(fd_stdout, STDOUT_FILENO));
+        }
+        if (fd_stderr >= 0) {
+            CHECK(dup2(fd_stderr, STDERR_FILENO));
+        }
+        close_range(3, ~0U, 0);
+
         // child
         CHECK(ptrace(PTRACE_TRACEME, 0, NULL, NULL));
         CHECK(execve(pathname, argv, envp));
+    }
+
+    if (fd_stdin >= 0) {
+        close(fd_stdin);
+    }
+    if (fd_stdout >= 0) {
+        close(fd_stdout);
+    }
+    if (fd_stderr >= 0) {
+        close(fd_stderr);
     }
 
     h = new process_handle(pid);

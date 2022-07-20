@@ -56,6 +56,7 @@ class BranchInstruction(enum.IntFlag):
     BI_ALL = BI_JUMP | BI_CALL | BI_RET | BI_IRET | BI_JUMP_REL
 
 
+"""
 _start_process = LIB.pi_start_process
 _start_process.argtypes = [
     ctypes.c_char_p,
@@ -63,6 +64,18 @@ _start_process.argtypes = [
     ctypes.POINTER(ctypes.c_char_p),
 ]
 _start_process.restype = ctypes.POINTER(_ProcessHandle)
+"""
+
+_start_process2 = LIB.pi_start_process2
+_start_process2.argtypes = [
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.POINTER(ctypes.c_char_p),
+    ctypes.c_int32,
+    ctypes.c_int32,
+    ctypes.c_int32,
+]
+_start_process2.restype = ctypes.POINTER(_ProcessHandle)
 
 _run_until = LIB.pi_run_until
 _run_until.argtypes = [
@@ -145,7 +158,7 @@ class Process():
 
         return wrapper
 
-    def start_process(self, pathname: str, argv: list[str], envp: list[str]):
+    def start_process(self, pathname: str, argv: list[str], envp: list[str], fd_stdin = -1, fd_stdout = -1, fd_stderr = -1):
         c_argv = (ctypes.c_char_p * (len(argv) + 1))()
         c_argv[:-1] = list(map(str.encode, argv))
         c_argv[-1] = None
@@ -156,7 +169,7 @@ class Process():
 
         pathname = pathname.encode()
 
-        rv = _start_process(pathname, c_argv, c_envp)
+        rv = _start_process2(pathname, c_argv, c_envp, fd_stdin, fd_stdout, fd_stderr)
         if rv is None:
             raise RuntimeError("Could not start process: " + pathname)
 
